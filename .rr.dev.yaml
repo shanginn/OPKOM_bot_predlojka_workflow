@@ -1,0 +1,30 @@
+version: "2.7"
+rpc:
+    listen: tcp://127.0.0.1:6001
+
+reload:
+    enable: true
+    services:
+        temporal:
+            # recursive search for file patterns to add
+            recursive: true
+            # ignored folders
+            ignore: [ "vendor" ]
+            # service specific file pattens to sync
+            patterns: [ ".php"]
+            # directories to sync. If recursive is set to true,
+            # recursive sync will be applied only to the directories in `dirs` section
+            dirs: [ "." ]
+
+server:
+    command: "php worker.php"
+    env:
+        - DEBUG: "true"
+        - XDEBUG_SESSION: "1"
+
+temporal:
+    address: $TEMPORAL_CLI_ADDRESS
+    activities:
+        num_workers: 1
+    debug_level: 2
+    codec: json
