@@ -7,7 +7,7 @@ namespace Worker\Tests\Functional;
 use Temporal\Client\GRPC\ServiceClient;
 use Temporal\Client\WorkflowClient;
 use Temporal\Testing\ActivityMocker;
-use Worker\Contracts\BaseWorkflowInterface;
+use Worker\Contracts\PostWorkflowInterface;
 use Worker\Tests\TestCase;
 
 class BaseWorkflowTest extends TestCase
@@ -26,7 +26,7 @@ class BaseWorkflowTest extends TestCase
     public function testBaseWorkflow(): void
     {
         $this->activityMocks->expectCompletion('Greetings.sayHello', 'Mocked hello!');
-        $workflow = $this->workflowClient->newWorkflowStub(BaseWorkflowInterface::class);
+        $workflow = $this->workflowClient->newWorkflowStub(PostWorkflowInterface::class);
 
         $run = $this->workflowClient->start($workflow);
 

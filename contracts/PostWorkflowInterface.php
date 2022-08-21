@@ -11,7 +11,7 @@ use Temporal\Workflow\WorkflowInterface;
 use Temporal\Workflow\WorkflowMethod;
 
 #[WorkflowInterface]
-interface BaseWorkflowInterface
+interface PostWorkflowInterface
 {
     #[WorkflowMethod]
     #[ReturnType(Type::TYPE_STRING)]
