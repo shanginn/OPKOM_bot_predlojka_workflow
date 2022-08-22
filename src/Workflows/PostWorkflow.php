@@ -46,8 +46,7 @@ class PostWorkflow
         $this->config = $config;
 
         yield Workflow::awaitWithTimeout(
-            //CarbonInterval::hour(),
-            60,
+            CarbonInterval::hours(2),
             fn () => $this->worth()
         );
 
