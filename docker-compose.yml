@@ -5,6 +5,8 @@ services:
     build: .
     env_file: .env
     container_name: temporal-php-worker
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - .:/worker:delegated
     entrypoint: ''
