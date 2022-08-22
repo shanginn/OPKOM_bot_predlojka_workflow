@@ -115,7 +115,7 @@ class PostWorkflow
 
     private function worth(): bool
     {
-        return $this->getUpVotes() - $this->getDownVotes() > 0;
+        return $this->getUpVotes() - $this->getDownVotes() >= 3;
     }
 
     #[Workflow\QueryMethod]
