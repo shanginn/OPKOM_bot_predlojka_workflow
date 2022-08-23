@@ -108,7 +108,15 @@ class PostWorkflow
             $this->setVote($voterId, $voteType);
         }
 
-        yield $this->updateKeyboard();
+        $newButtonVersion = yield Workflow::getVersion(
+            'new-button',
+            Workflow::DEFAULT_VERSION,
+            1
+        );
+
+        if ($newButtonVersion !== Workflow::DEFAULT_VERSION) {
+            yield $this->updateKeyboard();
+        }
     }
 
     #[Workflow\SignalMethod]
