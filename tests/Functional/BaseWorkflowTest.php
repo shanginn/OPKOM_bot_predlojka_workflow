@@ -9,8 +9,9 @@ use Temporal\Client\WorkflowClient;
 use Temporal\Testing\ActivityMocker;
 use Worker\Contracts\PostWorkflowInterface;
 use Worker\Tests\TestCase;
+use Worker\Workflows\PostWorkflow;
 
-class BaseWorkflowTest extends TestCase
+class PostWorkflowTest extends TestCase
 {
     private WorkflowClient $workflowClient;
     private ActivityMocker $activityMocks;
@@ -25,14 +26,23 @@ class BaseWorkflowTest extends TestCase
 
     public function testBaseWorkflow(): void
     {
-        $this->activityMocks->expectCompletion('Greetings.sayHello', 'Mocked hello!');
-        $workflow = $this->workflowClient->newWorkflowStub(PostWorkflowInterface::class);
+        $this->activityMocks->expectCompletion(
+            'Telegram.sendToMainChat',
+            null,
+        );
+
+        $this->activityMocks->expectCompletion(
+            'Telegram.removeKeyboard',
+            null,
+        );
+
+        $workflow = $this->workflowClient->newWorkflowStub(PostWorkflow::class);
 
         $run = $this->workflowClient->start($workflow);
 
         self::assertSame(
-            'Mocked hello!',
-            $run->getResult('string')
+            [],
+            $run->getResult('array')
         );
     }
 }

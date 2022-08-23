@@ -21,6 +21,10 @@ use Worker\Services\TelegramService;
 class PostWorkflow
 {
     private const KEY_PREFIX = 'VOTE';
+    private const HOURS_TO_VOTE = 24;
+
+    const VOTES_TO_WORTH = 3;
+
     /**
      * @var TelegramService
      */
@@ -28,6 +32,11 @@ class PostWorkflow
 
     private Config $config;
 
+    private int $hoursLeft = self::HOURS_TO_VOTE;
+
+    /**
+     * @var array<string, VoteType>
+     */
     private array $votes = [];
 
     public function __construct()
@@ -45,8 +54,31 @@ class PostWorkflow
     {
         $this->config = $config;
 
+        $newButtonVersion = yield Workflow::getVersion(
+            'new-button',
+            Workflow::DEFAULT_VERSION,
+            1
+        );
+
+        if ($newButtonVersion !== Workflow::DEFAULT_VERSION) {
+            $countdownUpdaterPromise = Workflow::async(function () {
+                yield $this->updateKeyboard();
+
+                while (true) {
+                    yield Workflow::timer(CarbonInterval::hour());
+                    $this->hoursLeft--;
+
+                    yield $this->updateKeyboard();
+
+                    if ($this->hoursLeft === 0) {
+                        break;
+                    }
+                }
+            });
+        }
+
         yield Workflow::awaitWithTimeout(
-            CarbonInterval::hours(24),
+            CarbonInterval::hours(self::HOURS_TO_VOTE),
             fn () => $this->worth()
         );
 
@@ -54,11 +86,17 @@ class PostWorkflow
             yield $this->telegram->sendToMainChat($this->config->messageId);
         }
 
+        if ($newButtonVersion !== Workflow::DEFAULT_VERSION) {
+            yield $this->removeLikesButtons();
+
+            $countdownUpdaterPromise->cancel();
+        }
+
         return $this->countVotes();
     }
 
     #[Workflow\SignalMethod]
-    public function vote(int $voterId, string $voteType): void
+    public function vote(int $voterId, string $voteType): Generator
     {
         $voteType = VoteType::from($voteType);
 
@@ -69,6 +107,31 @@ class PostWorkflow
         } else {
             $this->setVote($voterId, $voteType);
         }
+
+        yield $this->updateKeyboard();
+    }
+
+    #[Workflow\SignalMethod]
+    public function updateKeyboard(): Generator
+    {
+        yield $this->telegram->updateKeyboard(
+            (string) $this->config->messageId,
+            $this->getUpVotes(),
+            $this->getDownVotes(),
+            self::VOTES_TO_WORTH,
+            $this->hoursLeft
+        );
+    }
+
+    #[Workflow\SignalMethod]
+    public function removeLikesButtons(): Generator
+    {
+        yield $this->telegram->removeLikesButtons(
+            (string) $this->config->messageId,
+            $this->getUpVotes(),
+            $this->getDownVotes(),
+            self::VOTES_TO_WORTH,
+        );
     }
 
     private function getVote(int $voterId): ?VoteType
@@ -114,7 +177,7 @@ class PostWorkflow
 
     private function worth(): bool
     {
-        return $this->getUpVotes() - $this->getDownVotes() >= 3;
+        return $this->getUpVotes() - $this->getDownVotes() >= self::VOTES_TO_WORTH;
     }
 
     #[Workflow\QueryMethod]
