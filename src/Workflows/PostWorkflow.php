@@ -54,28 +54,20 @@ class PostWorkflow
     {
         $this->config = $config;
 
-        $newButtonVersion = yield Workflow::getVersion(
-            'new-button',
-            Workflow::DEFAULT_VERSION,
-            1
-        );
+        $countdownUpdaterPromise = Workflow::async(function () {
+            yield $this->updateKeyboard();
 
-        if ($newButtonVersion !== Workflow::DEFAULT_VERSION) {
-            $countdownUpdaterPromise = Workflow::async(function () {
+            while (true) {
+                yield Workflow::timer(CarbonInterval::hour());
+                $this->hoursLeft--;
+
                 yield $this->updateKeyboard();
 
-                while (true) {
-                    yield Workflow::timer(CarbonInterval::hour());
-                    $this->hoursLeft--;
-
-                    yield $this->updateKeyboard();
-
-                    if ($this->hoursLeft === 0) {
-                        break;
-                    }
+                if ($this->hoursLeft === 0) {
+                    break;
                 }
-            });
-        }
+            }
+        });
 
         yield Workflow::awaitWithTimeout(
             CarbonInterval::hours(self::HOURS_TO_VOTE),
@@ -86,11 +78,9 @@ class PostWorkflow
             yield $this->telegram->sendToMainChat($this->config->messageId);
         }
 
-        if ($newButtonVersion !== Workflow::DEFAULT_VERSION) {
-            yield $this->removeLikesButtons();
+        yield $this->removeLikesButtons();
 
-            $countdownUpdaterPromise->cancel();
-        }
+        $countdownUpdaterPromise->cancel();
 
         return $this->countVotes();
     }
@@ -108,15 +98,7 @@ class PostWorkflow
             $this->setVote($voterId, $voteType);
         }
 
-        $newButtonVersion = yield Workflow::getVersion(
-            'new-button',
-            Workflow::DEFAULT_VERSION,
-            1
-        );
-
-        if ($newButtonVersion !== Workflow::DEFAULT_VERSION) {
-            yield $this->updateKeyboard();
-        }
+        yield $this->updateKeyboard();
     }
 
     #[Workflow\SignalMethod]
