@@ -6,6 +6,7 @@ namespace Worker\Services;
 
 use Longman\TelegramBot\Entities\InlineKeyboard;
 use Longman\TelegramBot\Entities\InlineKeyboardButton;
+use Spiral\RoadRunner\Logger;
 use Telegram\Bot\Api;
 use Telegram\Bot\Exceptions\TelegramSDKException;
 use Temporal\Activity\ActivityInterface;
@@ -21,9 +22,9 @@ class TelegramService
 
     public function __construct()
     {
-        $this->mainChatId = $_ENV['MAIN_CHAT_ID'];
-        $this->suggestChatId = $_ENV['SUGGEST_CHAT_ID'];
-        $this->bot = new Api($_ENV['TELEGRAM_BOT_TOKEN']);
+        $this->mainChatId = getenv('MAIN_CHAT_ID');
+        $this->suggestChatId = getenv('SUGGEST_CHAT_ID');
+        $this->bot = new Api(getenv('TELEGRAM_BOT_TOKEN'));
     }
 
     #[ActivityMethod(name: 'sendToMainChat')]
@@ -57,7 +58,7 @@ class TelegramService
     }
 
     #[ActivityMethod(name: 'updateKeyboardCounter')]
-    public function updateKeyboard(
+    public function updateKeyboardCounter(
         string $messageId,
         int $upVotes,
         int $downVotes,
@@ -71,6 +72,38 @@ class TelegramService
                     $upVotes - $downVotes,
                     $votesToWorth,
                     $hoursLeft
+                ),
+                'callback_data' => 'none',
+            ]))
+            ->addRow(
+                new InlineKeyboardButton([
+                    'text' => sprintf('👍 %d', $upVotes ?? 0),
+                    'callback_data' => '👍',
+                ]),
+                new InlineKeyboardButton([
+                    'text' => sprintf('👎 %d', $downVotes ?? 0),
+                    'callback_data' => '👎',
+                ])
+            );
+
+        $this->updateKeyboardMarkup($messageId, $keyboardInline);
+    }
+
+    #[ActivityMethod(name: 'updateKeyboardCounterWithMinutes')]
+    public function updateKeyboardWithMinutes(
+        string $messageId,
+        int $upVotes,
+        int $downVotes,
+        int $votesToWorth,
+        int $minutesLeft
+    ): void {
+        $keyboardInline = (new InlineKeyboard([]))
+            ->addRow(new InlineKeyboardButton([
+                'text' => sprintf(
+                    '%d/%d. Осталось: %s',
+                    $upVotes - $downVotes,
+                    $votesToWorth,
+                    gmdate('H:i', $minutesLeft * 60)
                 ),
                 'callback_data' => 'none',
             ]))

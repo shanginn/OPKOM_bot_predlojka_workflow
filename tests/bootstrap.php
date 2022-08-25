@@ -2,14 +2,15 @@
 
 declare(strict_types=1);
 
-$currentDir = __DIR__;
+require __DIR__ . '/../vendor/autoload.php';
 
-require $currentDir . '/../vendor/autoload.php';
-
+use Dotenv\Dotenv;
 use Temporal\Testing\Environment;
 
-$environment = Environment::create();
+(Dotenv::createImmutable(__DIR__ . '/../', '.env.testing'))
+    ->load();
 
-echo "./rr serve -c $currentDir/.rr.test.yaml -w tests";
-$environment->start("./rr serve -c $currentDir/.rr.test.yaml -w tests");
+$environment = Environment::create();
+$environment->start("./rr serve -c .rr.test.yaml -w tests");
+
 register_shutdown_function(fn () => $environment->stop());

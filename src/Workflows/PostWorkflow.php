@@ -33,6 +33,7 @@ class PostWorkflow
     private Config $config;
 
     private int $hoursLeft = self::HOURS_TO_VOTE;
+    private int $minutesLeft = self::HOURS_TO_VOTE * 60;
 
     /**
      * @var array<string, VoteType>
@@ -54,25 +55,49 @@ class PostWorkflow
     {
         $this->config = $config;
 
-        $countdownUpdaterPromise = Workflow::async(function () {
-            yield $this->updateKeyboard();
+        $newAlgoVersion = yield Workflow::getVersion(
+            'newAlgo',
+            Workflow::DEFAULT_VERSION,
+            1
+        );
 
-            while (true) {
-                yield Workflow::timer(CarbonInterval::hour());
-                $this->hoursLeft--;
-
+        if ($newAlgoVersion === Workflow::DEFAULT_VERSION) {
+            $countdownUpdaterPromise = Workflow::async(function () {
                 yield $this->updateKeyboard();
 
-                if ($this->hoursLeft === 0) {
+                while (true) {
+                    yield Workflow::timer(CarbonInterval::hour());
+                    $this->hoursLeft--;
+
+                    yield $this->updateKeyboard();
+
+                    if ($this->hoursLeft === 0) {
+                        break;
+                    }
+                }
+            });
+
+            yield Workflow::awaitWithTimeout(
+                CarbonInterval::hours(self::HOURS_TO_VOTE),
+                fn() => $this->worth()
+            );
+        } else {
+            while (true) {
+                yield $this->updateKeyboardWithMinutes();
+
+                yield Workflow::timer(CarbonInterval::minute());
+
+                $this->minutesLeft--;
+
+                // Или время вышло,
+                // Или прошел час и голосование успешно
+                if ($this->minutesLeft === 0 ||
+                    ($this->minutesLeft % 60 === 0 && $this->worth())
+                ) {
                     break;
                 }
             }
-        });
-
-        yield Workflow::awaitWithTimeout(
-            CarbonInterval::hours(self::HOURS_TO_VOTE),
-            fn () => $this->worth()
-        );
+        }
 
         if ($this->worth()) {
             yield $this->telegram->sendToMainChat($this->config->messageId);
@@ -80,7 +105,9 @@ class PostWorkflow
 
         yield $this->removeLikesButtons();
 
-        $countdownUpdaterPromise->cancel();
+        if ($newAlgoVersion === Workflow::DEFAULT_VERSION) {
+            $countdownUpdaterPromise->cancel();
+        }
 
         return $this->countVotes();
     }
@@ -98,18 +125,39 @@ class PostWorkflow
             $this->setVote($voterId, $voteType);
         }
 
-        yield $this->updateKeyboard();
+        $newAlgoVersion = yield Workflow::getVersion(
+            'newAlgo',
+            Workflow::DEFAULT_VERSION,
+            1
+        );
+
+        if ($newAlgoVersion === Workflow::DEFAULT_VERSION) {
+            yield $this->updateKeyboard();
+        } else {
+            yield $this->updateKeyboardWithMinutes();
+        }
     }
 
     #[Workflow\SignalMethod]
     public function updateKeyboard(): Generator
     {
-        yield $this->telegram->updateKeyboard(
+        yield $this->telegram->updateKeyboardCounter(
             (string) $this->config->messageId,
             $this->getUpVotes(),
             $this->getDownVotes(),
             self::VOTES_TO_WORTH,
             $this->hoursLeft
+        );
+    }
+
+    public function updateKeyboardWithMinutes(): Generator
+    {
+        yield $this->telegram->updateKeyboardWithMinutes(
+            (string) $this->config->messageId,
+            $this->getUpVotes(),
+            $this->getDownVotes(),
+            self::VOTES_TO_WORTH,
+            $this->minutesLeft
         );
     }
 
