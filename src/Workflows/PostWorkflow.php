@@ -83,17 +83,13 @@ class PostWorkflow
             );
         } else {
             while (true) {
+                $this->minutesLeft--;
+
                 yield $this->updateKeyboardWithMinutes();
 
                 yield Workflow::timer(CarbonInterval::minute());
 
-                $this->minutesLeft--;
-
-                // Или время вышло,
-                // Или прошел час и голосование успешно
-                if ($this->minutesLeft === 0 ||
-                    ($this->minutesLeft % 60 === 0 && $this->worth())
-                ) {
+                if ($this->minutesLeft === 0 || ($this->timeToCheck() && $this->worth())) {
                     break;
                 }
             }
@@ -216,6 +212,11 @@ class PostWorkflow
     private function worth(): bool
     {
         return $this->getUpVotes() - $this->getDownVotes() >= self::VOTES_TO_WORTH;
+    }
+
+    private function timeToCheck(): bool
+    {
+        return $this->minutesLeft % 60 === 0;
     }
 
     #[Workflow\QueryMethod]
