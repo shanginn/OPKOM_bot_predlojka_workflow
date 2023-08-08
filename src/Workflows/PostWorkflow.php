@@ -61,39 +61,25 @@ class PostWorkflow
             1
         );
 
-        if ($newAlgoVersion === Workflow::DEFAULT_VERSION) {
-            $countdownUpdaterPromise = Workflow::async(function () {
+        $countdownUpdaterPromise = Workflow::async(function () {
+            yield $this->updateKeyboard();
+
+            while (true) {
+                yield Workflow::timer(CarbonInterval::hour());
+                $this->hoursLeft--;
+
                 yield $this->updateKeyboard();
 
-                while (true) {
-                    yield Workflow::timer(CarbonInterval::hour());
-                    $this->hoursLeft--;
-
-                    yield $this->updateKeyboard();
-
-                    if ($this->hoursLeft === 0) {
-                        break;
-                    }
-                }
-            });
-
-            yield Workflow::awaitWithTimeout(
-                CarbonInterval::hours(self::HOURS_TO_VOTE),
-                fn() => $this->worth()
-            );
-        } else {
-            while (true) {
-                $this->minutesLeft--;
-
-                yield $this->updateKeyboardWithMinutes();
-
-                yield Workflow::timer(CarbonInterval::minute());
-
-                if ($this->minutesLeft === 0 || ($this->timeToCheck() && $this->worth())) {
+                if ($this->hoursLeft === 0) {
                     break;
                 }
             }
-        }
+        });
+
+        yield Workflow::awaitWithTimeout(
+            CarbonInterval::hours(self::HOURS_TO_VOTE),
+            fn() => $this->worth()
+        );
 
         if ($this->worth()) {
             yield $this->telegram->sendToMainChat($this->config->messageId);
@@ -101,9 +87,7 @@ class PostWorkflow
 
         yield $this->removeLikesButtons();
 
-        if ($newAlgoVersion === Workflow::DEFAULT_VERSION) {
-            $countdownUpdaterPromise->cancel();
-        }
+        $countdownUpdaterPromise->cancel();
 
         return $this->countVotes();
     }
