@@ -55,39 +55,23 @@ class PostWorkflow
     {
         $this->config = $config;
 
-        $newAlgoVersion = yield Workflow::getVersion(
-            'newAlgo',
-            Workflow::DEFAULT_VERSION,
-            1
-        );
+        while (true) {
+            $this->minutesLeft--;
 
-        $countdownUpdaterPromise = Workflow::async(function () {
-            yield $this->updateKeyboard();
+            yield $this->updateKeyboardWithMinutes();
 
-            while (true) {
-                yield Workflow::timer(CarbonInterval::hour());
-                $this->hoursLeft--;
+            yield Workflow::timer(CarbonInterval::minute());
 
-                yield $this->updateKeyboard();
-
-                if ($this->hoursLeft === 0) {
-                    break;
-                }
+            if ($this->minutesLeft === 0 || ($this->timeToCheck() && $this->decisionMade())) {
+                break;
             }
-        });
-
-        yield Workflow::awaitWithTimeout(
-            CarbonInterval::hours(self::HOURS_TO_VOTE),
-            fn() => $this->worth()
-        );
+        }
 
         if ($this->worth()) {
             yield $this->telegram->sendToMainChat($this->config->messageId);
         }
 
         yield $this->removeLikesButtons();
-
-        $countdownUpdaterPromise->cancel();
 
         return $this->countVotes();
     }
@@ -196,6 +180,16 @@ class PostWorkflow
     private function worth(): bool
     {
         return $this->getUpVotes() - $this->getDownVotes() >= self::VOTES_TO_WORTH;
+    }
+
+    private function worthless(): bool
+    {
+        return $this->getUpVotes() - $this->getDownVotes() <= -self::VOTES_TO_WORTH;
+    }
+
+    private function decisionMade(): bool
+    {
+        return $this->worth() || $this->worthless();
     }
 
     private function timeToCheck(): bool
