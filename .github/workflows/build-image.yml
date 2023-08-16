@@ -52,7 +52,10 @@ jobs:
           chmod 600 ~/.kube/config
 
       - name: Deploy app
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         run: |
           cd helm
           helm upgrade workflow -f values.yaml . \
             --set=envSecrets.TELEGRAM_BOT_TOKEN="${TELEGRAM_BOT_TOKEN}"
+          kubectl rollout restart deployment/workflow
