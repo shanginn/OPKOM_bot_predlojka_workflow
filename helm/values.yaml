@@ -12,7 +12,7 @@ serviceAccount:
 env:
   TEMPORAL_CLI_ADDRESS: "temporal-frontend.temporal:7233"
   MAIN_CHAT_ID: "@OPKOM"
-  SUGGEST_CHAT_ID: "-1780782284"
+  SUGGEST_CHAT_ID: "-1001780782284"
 
 envSecrets:
   TELEGRAM_BOT_TOKEN: ""
