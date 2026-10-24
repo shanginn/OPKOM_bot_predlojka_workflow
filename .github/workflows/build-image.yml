@@ -4,10 +4,17 @@ on:
   push:
     branches: [ master ]
 
+concurrency:
+  group: OPKOM_bot_predlojka_workflow-unified-production
+  cancel-in-progress: false
+
 jobs:
   build:
     name: Build and push Docker image to GitHub Container Registry
     runs-on: ubuntu-latest
+
+    outputs:
+      image: ghcr.io/shanginn/opkom_bot_predlojka_workflow@${{ steps.image.outputs.digest }}
 
     steps:
       - name: Check out the repo
@@ -24,38 +31,72 @@ jobs:
         run: echo "REPO_NAME=$(echo ${{ github.repository }} | awk -F '/' '{print tolower($2)}')" >> $GITHUB_ENV
 
       - name: Build and push Docker image
+        id: image
         uses: docker/build-push-action@v4
         with:
           push: true
           tags: ghcr.io/${{ github.repository_owner }}/${{ env.REPO_NAME }}:latest
 
   deploy:
+    name: Deploy verified digest to unified opkom
     runs-on: ubuntu-latest
     needs: build
+    permissions:
+      contents: read
     steps:
-      - name: Checkout
-        uses: actions/checkout@v3
+      - uses: azure/setup-kubectl@v4
         with:
-          fetch-depth: 0
-
-      - name: Install Helm
-        uses: azure/setup-helm@v3
+          version: v1.36.5
+      - name: Update only prepared application images
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Save Kube Config
-        env:
-          KUBECONFIG: ${{ secrets.KUBECONFIG }}
+          DEPLOY_KUBECONFIG: ${{ secrets.KUBECONFIG }}
+          IMAGE: ${{ needs.build.outputs.image }}
+        shell: bash
         run: |
-          mkdir -p ~/.kube/
-          echo "${KUBECONFIG}" > ~/.kube/config
-          chmod 600 ~/.kube/config
-
-      - name: Deploy app
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-        run: |
-          cd helm
-          helm upgrade workflow -f values.yaml . \
-            --set=envSecrets.TELEGRAM_BOT_TOKEN="${TELEGRAM_BOT_TOKEN}"
-          kubectl rollout restart deployment/workflow
+          set -euo pipefail
+          umask 077
+          work="$(mktemp -d)"
+          export DEPLOY_WORK="$work"
+          tunnel_pid=""
+          cleanup() {
+            if [ -n "$tunnel_pid" ]; then kill "$tunnel_pid" 2>/dev/null || true; fi
+            rm -rf "$work"
+          }
+          trap cleanup EXIT
+          python3 - <<'PY'
+          import base64,json,os,pathlib
+          root=pathlib.Path(os.environ['DEPLOY_WORK'])
+          config=json.loads(os.environ['DEPLOY_KUBECONFIG'])
+          cluster=config['clusters'][0]['cluster']
+          extension=next(e['extension'] for e in cluster.pop('extensions') if e['name']=='infra-ssh-tunnel')
+          assert extension['host']=='89.35.119.225' and extension['port']==42242 and extension['user']=='ci-unified-apps'
+          assert cluster['server']=='https://100.96.0.1:6443' and cluster['proxy-url']=='socks5://127.0.0.1:1080'
+          assert config['contexts'][0]['context']['namespace']=='opkom'
+          (root/'key').write_bytes(base64.b64decode(extension['private-key-data']))
+          (root/'known_hosts').write_text('[89.35.119.225]:42242 '+extension['host-key']+'\n')
+          (root/'config').write_text(json.dumps(config))
+          PY
+          unset DEPLOY_KUBECONFIG
+          ssh -F /dev/null -N -D 127.0.0.1:1080 -p 42242 \
+            -i "$work/key" -o IdentitiesOnly=yes -o BatchMode=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$work/known_hosts" \
+            -o ExitOnForwardFailure=yes -o ServerAliveInterval=15 \
+            -o ServerAliveCountMax=4 ci-unified-apps@89.35.119.225 &
+          tunnel_pid=$!
+          export KUBECONFIG="$work/config"
+          for attempt in 1 2 3 4 5; do
+            if kubectl --request-timeout=15s -n opkom get deployment workflow >/dev/null; then break; fi
+            kill -0 "$tunnel_pid"
+            sleep 2
+          done
+          [[ "$IMAGE" =~ ^ghcr\.io/shanginn/opkom_bot_predlojka_workflow@sha256:[0-9a-f]{64}$ ]]
+          kubectl --request-timeout=20s -n opkom get deployment workflow -o json > "$work/deployment.json"
+          python3 - "$work/deployment.json" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1]));assert d['metadata']['namespace']=='opkom' and d['metadata']['name']=='workflow'
+          a=d['metadata'].get('annotations',{});assert a.get('infra-unified/handover')=='validated','Migration handover must be validated before CI deploys'
+          assert a.get('infra-unified/ci-repository')=='shanginn/OPKOM_bot_predlojka_workflow'
+          assert d['spec']['strategy']['type']=='Recreate' and d['spec']['replicas']>0
+          PY
+          kubectl --request-timeout=30s -n opkom set image deployment/workflow workflow="$IMAGE"
+          kubectl --request-timeout=30s -n opkom rollout status deployment/workflow --timeout=600s
