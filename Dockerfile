@@ -15,7 +15,7 @@ COPY --chown=worker:worker . /worker
 
 RUN composer install --no-dev --no-scripts --no-plugins --prefer-dist --no-progress --no-interaction \
     && composer check-platform-reqs --no-dev \
-    && php -r 'require "vendor/autoload.php"; if (PHP_VERSION !== "8.2.35") { throw new RuntimeException("PHP 8.2.35 is required"); }'
+    && php -r 'require "vendor/autoload.php"; if (PHP_VERSION !== "8.2.36") { throw new RuntimeException("PHP 8.2.36 is required"); }'
 
 USER worker
 ENTRYPOINT ["/usr/local/bin/rr", "serve", "-c", "/worker/.rr.yaml"]
